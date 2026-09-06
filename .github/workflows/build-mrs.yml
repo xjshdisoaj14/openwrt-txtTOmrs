@@ -2,9 +2,12 @@ name: Build Nikki MRS Ruleset
 
 on:
   schedule:
-    # 每天 UTC 20:00 (北京时间 04:00) 自动执行
+    # 每天 UTC 20:00 (北京时间 04:00) 自动触发
     - cron: '0 20 * * *'
-  workflow_dispatch: # 支持手动触发运行
+  workflow_dispatch: # 支持在 GitHub 页面手动点击运行
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -23,7 +26,6 @@ jobs:
 
       - name: Download & Install Mihomo CLI
         run: |
-          # 获取最新的 Mihomo 编译工具
           MIHOMO_TAG=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r .tag_name)
           curl -L -o mihomo.gz "https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_TAG}/mihomo-linux-amd64-${MIHOMO_TAG}.gz"
           gunzip mihomo.gz
@@ -31,20 +33,24 @@ jobs:
 
       - name: Compile to .mrs binary
         run: |
-          # 使用 mihomo convert-ruleset 将 yaml 格式转换为 mrs 二进制文件
           ./mihomo convert-ruleset domain yaml adblock_parsed.yaml adblock.mrs
 
-      - name: Deploy to release branch
+      - name: Deploy to publish branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          # 创建并切换到 publish 分支提交二进制规则包
+          # 1. 将生成的二进制文件临时存放到系统临时目录
+          cp adblock.mrs /tmp/adblock.mrs
+
+          # 2. 切换/创建干净的 publish 分支，并清除工作区文件
           git checkout --orphan publish || git checkout publish
           git rm -rf .
-          cp adblock.mrs ./adblock.mrs
+          
+          # 3. 将文件从临时目录移动回根目录并提交
+          cp /tmp/adblock.mrs ./adblock.mrs
           git add adblock.mrs
           git commit -m "Auto update ruleset: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || exit 0
           git push -f origin publish
